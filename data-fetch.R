@@ -19,8 +19,8 @@ readingURL <- function(link)
 
 #################################################################
 #设置:统一从2月中旬开始吧
-account <- "dsmovie"
-  page <- seq(1296,1350,by=12)
+account <- "iiiher"
+  page <- seq(1608,1800,by=12)
 
   (url <-
     paste("http://chuansong.me/account/",
@@ -60,8 +60,8 @@ account <- "dsmovie"
         tryCatch(df <- rbind(df, data.frame(title, time, read, like, original,body)),
                      error=function(e){cat("fail in fetching this document.\n")})
         cat("获取：", title, "\n")
-        Sys.sleep(runif(1,5,20))
-        Sys.sleep(sample(x = c(0,0,0,1),size = 1)*20)
+        Sys.sleep(runif(1,3,15))
+        Sys.sleep(sample(x = c(0,0,0,0,1),size = 1)*20)
         }  
     }
     if(sample(c(rep(0,8),1),1)) {cat("sleep for 10 min\n");Sys.sleep(600)}
@@ -74,4 +74,3 @@ View(df)
 
 
 
-#1308
