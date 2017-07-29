@@ -88,7 +88,7 @@ ggplot(data=perp,mapping=aes(x=Num_topics,y=loglikelihood))+geom_line()+
 ggplot(data=perp,mapping=aes(x=Num_topics,y=perplexity))+geom_line()+
   geom_point()+labs(xlab="Num of topics",ylab="perplexity")
 
-k=12#choose a proper k which minimizes perplexity.
+k=12##预计将在10~13左右，待数据完备再标注一次
 alpha=0.1;delta=0.1
 gibbs <- LDA(as.matrix(dtm),k,method="Gibbs",
              control = list(alpha=alpha,delta=delta,burnin=200,iter=2000,seed=6646))
@@ -123,11 +123,11 @@ writeLines(iconv(readLines(paste(dir.path,"/lda.json",sep="")), from = "GBK", to
 
 
 
-# require:utf-8 encoding
-lda <- LatentDirichletAllocation$new(15,vocabulary=vocab,doc_topic_prior=0.1,
-                                     topic_word_prior=0.1)
-doc_topic_distr <- lda$fit_transform(dtm,n_iter = 2000)
-topic_word_distr <- lda$get_word_vectors()
-
-lda$plot()
+# # require:utf-8 encoding
+# lda <- LatentDirichletAllocation$new(15,vocabulary=vocab,doc_topic_prior=0.1,
+#                                      topic_word_prior=0.1)
+# doc_topic_distr <- lda$fit_transform(dtm,n_iter = 2000)
+# topic_word_distr <- lda$get_word_vectors()
+# 
+# lda$plot()
 
