@@ -4,7 +4,8 @@
 library(stringr)
 
 account.list <- c("dsmovie .RData","iiiher .RData","yansubagua .RData",
-                  "gossipmaker .RData","realmovie520 .RData","shenyebagua818 .RData")
+                  "gossipmaker .RData","realmovie520 .RData","shenyebagua818 .RData",
+                  "entifengvip .RData","sinaentertainment .RData","txent .RData","bbbbaye .RData")
 
 
 df.merge <- data.frame()
@@ -26,11 +27,13 @@ for (a in account.list)
   df$read <- read
   df$account <- account
   #merge
-  df$body <- NULL
+  #df$body <- NULL
   time_tru <- which(df$time=="2016-03-31")
   time_tru <- time_tru[length(time_tru)]
   df <- df[1:time_tru,]
   df.merge <- rbind(df.merge,df)
 }
 
-save(df.merge,file="no_body.RData")
+(naindex <- which(is.na(df.merge[,"time"])))
+df.merge <- df.merge[-naindex,]
+save(df.merge,file="with_body.RData")
