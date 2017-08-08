@@ -83,13 +83,13 @@ library(topicmodels)
 # }
 # 
 # 
-# #likelihood
-# perp
-# library(ggplot2)
-# ggplot(data=perp,mapping=aes(x=Num_topics,y=loglikelihood))+geom_line()+
-#   geom_point()+labs(xlab="Num of topics",ylab="loglikelihood")
-# ggplot(data=perp,mapping=aes(x=Num_topics,y=perplexity))+geom_line()+
-#   geom_point()+labs(xlab="Num of topics",ylab="perplexity")
+#likelihood
+perp
+library(ggplot2)
+ggplot(data=perp,mapping=aes(x=Num_topics,y=loglikelihood))+geom_line()+
+  geom_point()+labs(xlab="Num of topics",ylab="loglikelihood")
+ggplot(data=perp,mapping=aes(x=Num_topics,y=perplexity))+geom_line()+
+  geom_point()+labs(xlab="Num of topics",ylab="perplexity")
 
 
 
