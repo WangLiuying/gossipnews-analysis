@@ -3,3 +3,15 @@
 .RData
 .Ruserdata
 .Rproj
+lda_ver1.RData
+gamenames.RData
+text.txt
+lda_ver2.RData
+dictionary/*.txt
+LDAvis-gossip-version
+stars+description.R
+pictures
+cloud1.jpg
+cloud2.png
+*.png
+*.jpeg
