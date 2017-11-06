@@ -1,19 +1,4 @@
-###############################
-##明星词典
-###############################
-for (p in 1:702){
-	starurl<-paste("http://www.yoka.com/dna/star/item------------",p,".html",sep = "")
-	starpg<-getURL(starurl, .encoding="UTF-8")
-	starpg=strsplit(starpg,"\n")[[1]]
-	star=starpg[grep("<div class=\"autocont clearfix\">",starpg)+c(1:350)]
-	star=star[grep("<a href=\"/dna/star/",star)+2]
-	star<-str_trim(star)
-	star=unlist(str_split(star,"</a>"))
-	star=star[str_length(star)>0]
-	write.table(star,"明星.txt",col.names = F,append = T,row.names = F)
-	cat("当前为第",p,"页")
-	Sys.sleep(3)
-}
+
 ###############################
 ##样本描述
 ###############################
@@ -37,12 +22,11 @@ star <- readLines("dictionary/starname2.txt",encoding="UTF-8")
 library(text2vec)
 it <- itoken(seg_document)
 vocab <- create_vocabulary(it)
-stopwords <- vocab$vocab$terms[!(vocab$vocab$terms %in% star)]
+stopwords <- vocab$term[!(vocab$term %in% star)]
 vocab.star <- create_vocabulary(it,stopwords = stopwords);rm(stopwords)
 
 vect <- vocab_vectorizer(vocab.star)
-corpus <- create_corpus(it,vect)
-dtm.star <- corpus$get_dtm()
+dtm.star <- create_dtm(it,vect)
 docstar <- vocab.star$vocab$terms[apply(dtm.star,1,which.max)]
 docstar[apply(dtm.star,1,sum)==0] <- NA
 df.merge$docstar <- docstar
@@ -61,22 +45,27 @@ df.merge$account <-factor(df.merge$account,labels=c('圈内扒爷','毒舌电影
 # [9] "txent"             "yansubagua" 
 #公众号发文密度
 library(ggplot2)
-ggplot(df.merge,mapping = aes(x=time,y=account,alpha=0.1))+
+totalcount <- tapply(df.merge$time,df.merge$account,length)
+
+ggplot(df.merge,mapping = aes(x=time,y=reorder(account,df.merge$account,FUN=length),alpha=0.1))+
   geom_point(position="jitter")+aes(colour=account,fill=account)+
-  labs(x = "时间",y = "公众号",title="公众号发文时间密度")+
+  labs(x = "时间",y = "公众号"#,title="公众号发文时间密度"
+       )+
   guides(colour="none",alpha="none",size="none",fill="none")+theme_light()+scale_color_brewer(palette="Spectral")
 
 ##空缺情况：休刊，黄金周休假
-ggplot(df.merge,mapping = aes(x=account,fill=account))+
+ggplot(df.merge,mapping = aes(x=reorder(account,df.merge$account,FUN=length),fill=account))+
   geom_bar()+
-  labs(x = "公众号",y = "频数",title="公众号发文总量")+
+  labs(x = "公众号",y = "频数"
+       #,title="公众号发文总量"
+       )+
   guides(fill="none")+theme_light()+scale_fill_brewer(palette="Spectral")
 account.total <- table(df.merge$account)
 
 
 #公众号最青睐明星
-topstar <- vocab.star$vocab$terms[order(vocab.star$vocab$doc_counts,decreasing = T)]
-topstar <- data.frame(star=topstar,doc_counts=vocab.star$vocab$doc_counts[order(vocab.star$vocab$doc_counts,decreasing = T)])
+topstar <- vocab.star$term[order(vocab.star$doc_count,decreasing = T)]
+topstar <- data.frame(star=topstar,doc_counts=vocab.star$doc_count[order(vocab.star$doc_count,decreasing = T)])
 
 library(wordcloud2)
 wordcloud2(topstar,size=0.5)
@@ -98,16 +87,18 @@ str(df.merge)
 
 ##1.每个时间段报道了哪些主题
 ####picture 1
-ggplot(df.merge,mapping = aes(x=time,y=topics,alpha=1))+
+ggplot(df.merge,mapping = aes(x=time,y=reorder(topics,topics,FUN=length),alpha=1))+
   geom_point(position="jitter")+aes(colour=topics)+
-  labs(x = "时间",y = "话题",title="各主题报道时间密度")+
+  labs(x = "时间",y = "话题"#,title="各主题报道时间密度"
+       )+
   guides(colour="none",alpha="none")+theme_light()+scale_color_brewer(palette="Spectral")
   
 ####主题报道数
-ggplot(df.merge,mapping = aes(x=topics,fill=account))+
-  geom_bar()+
-  labs(x = "主题",y = "频数",title="各主题报道数")+
-  guides(fill=guide_legend(title="公众号"))+theme_light()+scale_fill_brewer(palette="Spectral")
+ggplot(df.merge,mapping = aes(x=account,fill=topics))+
+  geom_bar(,position='fill')+
+  labs(x = '公众号',y = "各主题占比"#,title="各主题报道数"
+       )+
+  guides(fill=guide_legend(title="主题"))+theme_light()+scale_fill_brewer(palette="Spectral")
 
 
 topic.total <- as.data.frame(table(df.merge$topics))
@@ -119,7 +110,8 @@ ggplot(data=topic.total,mapping=aes(x=1,y=freeq,fill=Var1))+
             x=0.9,label=round(topic.total$freeq,2))+
   geom_text(y=(cumsum(topic.total$freeq)+cumsum(c(0,topic.total$freeq[-9])))/2,
             x=1.25,label=topic.total$Var1,cex=3)+
-  coord_polar(theta="y",direction = 1)+labs(x="",y="",title="各大话题占比")+
+  coord_polar(theta="y",direction = 1)+labs(x="",y=""#,title="各大话题占比"
+                                            )+
   guides(fill="none")+theme_light()+
   theme(axis.text.y =element_blank())+scale_fill_brewer(palette="Spectral")
 #经常被报道的主题：5（时尚穿搭）、3（粉丝八卦爆料）、8（家庭亲子生活）、9（演员演艺点评）
@@ -135,17 +127,18 @@ ggplot(data=topic_in_account,mapping=aes(x=Var1,y=freqq,fill=Var1))+geom_col()+
 #公众号最青睐明星
 library(text2vec)
 topstar <- prune_vocabulary(vocab.star,doc_proportion_min = 0.04)
-topstar <- topstar$vocab
-gender <-c(2,1,1,2,2,1,2,2,2,1,2,1,1,2,1,2,2,1, 2,1,1,1,1,2,1,2,2,1,2,2)
-color <- rep(gender,times=topstar$doc_counts %/% 100)
-topstar <- rep(topstar$terms,times=topstar$doc_counts %/% 100)
+gender <-c(2,1,2,1,1,2,2,2,1,1,1,2,2,2,2,1,1,2,1,1,2,2,1,1,2,1,2,1,2,2)
+gender <- factor(gender,levels = c(1,2),labels = c('男','女'))
+color <- rep(gender,times=topstar$doc_count %/% 100)
+topstar <- rep(topstar$term,times=topstar$doc_count %/% 100)
 
 ggplot(mapping=aes(x=reorder(topstar,topstar,length),fill=as.factor(color),colour=as.factor(color)))+
   geom_dotplot(dotsize=0.5,stackratio = 2)+coord_flip()+
-  labs(x="明星",y="曝光次数",title="公众号最青睐明星top30")+
-  theme_light()+guides(fill="none",colour="none")+theme(axis.text.x  = element_blank())+
+  labs(x="明星",y="曝光次数"#,title="公众号最青睐明星top30"
+       )+
+  theme_light()+guides(fill=guide_legend(title='性别'),colour="none")+theme(axis.text.x  = element_blank())+
   theme(axis.text.y=element_text(size=9))+
-  scale_fill_brewer(palette = 5)#+scale_color_brewer(palette=5)
+  scale_fill_brewer(palette = 'Paired')+scale_color_brewer(palette='Paired')
 
 ggplot(mapping=aes(x=reorder(topstar,topstar,length),fill=as.factor(color),colour=as.factor(color)))+
   geom_bar()+coord_flip()+
@@ -161,10 +154,11 @@ head(topic_star)
 topic_star[!(topic_star$docstar %in% topstar),"docstar"] <- NA
 topic_star <- na.omit(topic_star)
 ggplot(topic_star,mapping=aes(x=topics,y=docstar))+geom_bin2d()+theme_light()+
-  labs(x="话题",y="明星",title="话题-明星热度")+
+  labs(x="话题",y="明星"#,title="话题-明星热度"
+       )+
   scale_fill_continuous(low = "white",high="red")+
   theme(panel.grid = element_blank(),axis.text.y=element_text(size=9))+
-  guides(fill=guide_legend(title = "频数"))
+  guides(fill=guide_legend(title = "频数",reverse=T))
 #带货女王杨幂，婚姻八卦宝强+杨幂，家庭亲子生活某渣男
 df.merge$title[which(df.merge$docstar=="文章")]
 #粗略看了一下，频频出现在家庭生活经营鸡汤类中，hhhh文章电影发布会紧张大哭：我演爱情戏可能没人相信
@@ -180,7 +174,8 @@ weekday.doc <- as.data.frame(weekday.doc)
 ggplot(data=weekday.doc,mapping=aes(x=1,y=Freq,fill=Var2))+geom_col()+
   coord_polar(theta="y",direction=1)+
   facet_wrap(~Var1,nrow=2,ncol=5,shrink = T)+#guides(fill="none")+
-  labs(x="",y="",title="每周发文时间")+
+  labs(x="",y=""#,title="每周发文时间"
+       )+
   theme_light()+scale_fill_brewer(palette="Spectral")+
   theme(axis.text.y = element_blank(),axis.text.x=element_text(size=5),
         axis.ticks.y=element_blank())+
@@ -190,16 +185,18 @@ ggplot(data=weekday.doc,mapping=aes(x=1,y=Freq,fill=Var2))+geom_col()+
 #广告占比
 adv.doc <- table(df.merge$account,df.merge$advertisement)
 adv.doc <- prop.table(adv.doc,margin = 1)
-adv.doc <- as.data.frame(adv.doc)
-adv.doc$Var2 <- factor(adv.doc$Var2,labels=c('否','是'))
-ggplot(data=adv.doc,mapping=aes(x=1,y=Freq,fill=Var2))+geom_col()+
+adv.doc <- as.data.table(adv.doc)
+adv.doc$V2 <- factor(adv.doc$V2,labels=c('普通推文','广告推文'))
+adv.doc$V1 <- reorder(adv.doc$V1,adv.N)
+ggplot(data=adv.doc,mapping=aes(x=1,y=N,fill=V2))+geom_col()+
   coord_polar(theta="y",direction=1)+
-  facet_wrap(~Var1,nrow=2,ncol=5,shrink = T)+#guides(fill="none")+
-  labs(x="",y="",title="广告发布占比")+
-  theme_light()+scale_fill_brewer(palette=3)+
+  facet_wrap(~V1,,nrow=2,ncol=5,shrink = T)+#guides(fill="none")+
+  labs(x="",y=""#,title="广告发布占比"
+       )+
+  theme_light()+scale_fill_brewer(palette='Paired')+
   theme(axis.text.y =element_blank(),axis.ticks.y = element_blank(),
         axis.text.x=element_text(size=5))+
-  guides(fill=guide_legend(title="是否广告"))
+  guides(fill=guide_legend(title="推文类型"))
 #一年中的发文频率变动
 # ggplot(df.merge,mapping = aes(x=time,colour=account))+geom_density(bw=7,trim=T)+
 #   scale_color_brewer(palette="Spectral")+theme_light()+
@@ -211,10 +208,11 @@ df.merge[!df.merge$advertisement,"adv"] <- NA
 ggplot(df.merge,mapping = aes(x=adv,colour=account))+geom_density(bw=7,trim=T)+
   scale_color_brewer(palette="Spectral")+theme_light()+
   labs(x="时间",y="广告发布频率",title="广告发布频率变动")#同样感觉不如散点图
-
-ggplot(df.merge,mapping = aes(x=adv,y=account,alpha=0.1))+
+df.seq <- df.merge[!is.na(df.merge$adv),]
+ggplot(df.seq,mapping = aes(x=adv,y=reorder(account,df.seq$account,FUN=length),alpha=0.1))+
   geom_point()+aes(colour=account,fill=account)+
-  labs(x = "时间",y = "公众号",title="广告发布时间密度")+
+  labs(x = "时间",y = "公众号"#,title="广告发布时间密度"
+       )+
   guides(fill="none",colour="none",alpha="none",size="none")+
   theme_light()+scale_color_brewer(palette="Spectral")
 
@@ -329,16 +327,24 @@ ggplot(data=target.adv,mapping=aes(x=time,y=value,color="lightblue",alpha=0.05))
 #   theme_light()+labs(x="时间",y="热度",title="每日阅读热度变化")
 
 
-myaccount=unique(df.merge$account)[10]
+myaccount=unique(df.merge$account)[2]
 
 target <- dailyhot[account==myaccount,]
 target.adv <- advhot[account==myaccount,]
 test <- rbind(target,target.adv)
-test
+
 ggplot(data=na.omit(test),mapping=aes(x=time,y=value,color=group,alpha=0.05))+geom_point(position='jitter')+
-  geom_smooth(method='loess',se=F,span=0.2)+guides(alpha='none',color=guide_legend(title="热度类型"))+
+  geom_smooth(method='loess',se=F,span=0.2)+guides(alpha='none',color=guide_legend(title="热度类型",reverse=T))+
   labs(x="时间",y="热度",title=str_c("每日阅读热度变化(",myaccount,")",sep=""))+
   #scale_x_date(date_labels='%Y-%m-%d',limits=c('2016-04-01',NA))+
-  ylim(0,70)+
+  ylim(0,60)+
   theme_light()
 
+test <- rbind(dailyhot,advhot)
+ggplot(data=na.omit(test),mapping=aes(x=time,y=value,color=group,alpha=0.01))+geom_point(position='jitter')+
+  geom_smooth(method='loess',se=F,span=0.2)+guides(alpha='none',color=guide_legend(title="热度类型",reverse=T))+
+  labs(x="时间",y="热度")+
+  #scale_x_date(date_labels='%Y-%m-%d',limits=c('2016-04-01',NA))+
+  facet_wrap(~account,scales=c('free'),shrink=T,as.table=F)+
+  theme_light()
+       

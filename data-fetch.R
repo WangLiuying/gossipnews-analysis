@@ -17,6 +17,23 @@ readingURL <- function(link)
   return(link_page)
 }
 
+##############################
+#明星词典
+##############################
+for (p in 1:702){
+  starurl<-paste("http://www.yoka.com/dna/star/item------------",p,".html",sep = "")
+  starpg<-getURL(starurl, .encoding="UTF-8")
+  starpg=strsplit(starpg,"\n")[[1]]
+  star=starpg[grep("<div class=\"autocont clearfix\">",starpg)+c(1:350)]
+  star=star[grep("<a href=\"/dna/star/",star)+2]
+  star<-str_trim(star)
+  star=unlist(str_split(star,"</a>"))
+  star=star[str_length(star)>0]
+  write.table(star,"明星.txt",col.names = F,append = T,row.names = F)
+  cat("当前为第",p,"页")
+  Sys.sleep(3)
+}
+
 #################################################################
 #设置:统一从2月中旬开始吧
 account <- "iiiher"
