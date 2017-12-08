@@ -37,6 +37,35 @@ wordcloud2(data=wordfreq,shape="star",size=0.3)
 
 rm(title,body)
 rm(wordfreq)
+
+##advertisement title
+title <- df.merge[advertisement==T,'title']
+
+jieba <- worker(type="mix",user = "./dictionary/topics.txt",
+                stop_word = "./dictionary/chinese_stopword.txt")
+jieba$bylines <- T
+jieba2 <- worker(user = "./dictionary/topics.txt",
+                 stop_word = STOPPATH,byline=T)
+title.seg <- segment(code =unlist(title),jiebar = jieba2)
+
+
+kws <- worker("keywords",user="./dictionary/topics.txt",
+              stop_word = "./dictionary/chinese_stopword.txt",topn=300)
+title.key <- vector_keywords(unlist(title.seg),jiebar=kws)
+title.key
+
+
+rm(df.merge,jieba,jieba2)
+
+library(wordcloud2)
+
+wordfreq <- data.frame(title.key,
+                       Freq=floor(as.numeric(names(title.key))))
+wordcloud2(data=wordfreq,figPath = "./cloud1.jpg",size=0.2)
+
+rm(title,body)
+rm(wordfreq)
+
 ##topics
 
 library(text2vec)

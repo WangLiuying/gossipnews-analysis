@@ -43,6 +43,10 @@ df.merge$account <-factor(df.merge$account,labels=c('圈内扒爷','毒舌电影
 # [1] "bbbbaye"           "dsmovie"           "entifengvip"       "gossipmaker"      
 # [5] "iiiher"            "realmovie520"      "shenyebagua818"    "sinaentertainment"
 # [9] "txent"             "yansubagua" 
+df.merge$weekday <-factor(df.merge$account,labels=c('圈内扒爷','毒舌电影','凤凰娱乐','关爱八卦成长协会',
+                                                    '她刊','深八影视圈','深夜八卦','新浪娱乐','腾讯娱乐','严肃八卦')) 
+
+df.merge$advertisement = ifelse(df.merge$advertisement,'是','否')
 #公众号发文密度
 library(ggplot2)
 totalcount <- tapply(df.merge$time,df.merge$account,length)
@@ -54,12 +58,13 @@ ggplot(df.merge,mapping = aes(x=time,y=reorder(account,df.merge$account,FUN=leng
   guides(colour="none",alpha="none",size="none",fill="none")+theme_light()+scale_color_brewer(palette="Spectral")
 
 ##空缺情况：休刊，黄金周休假
-ggplot(df.merge,mapping = aes(x=reorder(account,df.merge$account,FUN=length),fill=account))+
+ggplot(df.merge,mapping = aes(x=reorder(account,df.merge$account,FUN=length),fill=advertisement))+
   geom_bar()+
   labs(x = "公众号",y = "频数"
        #,title="公众号发文总量"
        )+
-  guides(fill="none")+theme_light()+scale_fill_brewer(palette="Spectral")
+  guides(fill=guide_legend(title = '是否广告',reverse = T))+
+  theme_light()+scale_fill_brewer(palette="Paired")
 account.total <- table(df.merge$account)
 
 
@@ -126,11 +131,12 @@ ggplot(data=topic_in_account,mapping=aes(x=Var1,y=freqq,fill=Var1))+geom_col()+
 
 #公众号最青睐明星
 library(text2vec)
-topstar <- prune_vocabulary(vocab.star,doc_proportion_min = 0.04)
-gender <-c(2,1,2,1,1,2,2,2,1,1,1,2,2,2,2,1,1,2,1,1,2,2,1,1,2,1,2,1,2,2)
+topstar <- prune_vocabulary(vocab.star,doc_proportion_min = 0.0312)
+topstar = topstar[topstar$term!='文章',]
+gender <-c(2,2,1,1,2,2,2,2,1,1,2,1,2,1,2,1,1,1,2,2,2,2,1,1,2,2,2,1,1,2)
 gender <- factor(gender,levels = c(1,2),labels = c('男','女'))
-color <- rep(gender,times=topstar$doc_count %/% 100)
-topstar <- rep(topstar$term,times=topstar$doc_count %/% 100)
+color <- rep(gender,times=topstar$doc_count %/% 20)
+topstar <- rep(topstar$term,times=topstar$doc_count %/% 20)
 
 ggplot(mapping=aes(x=reorder(topstar,topstar,length),fill=as.factor(color),colour=as.factor(color)))+
   geom_dotplot(dotsize=0.5,stackratio = 2)+coord_flip()+
@@ -167,6 +173,7 @@ df.merge$title[which(df.merge$docstar=="文章")]
 
 ##发文特征刻画:周末分布
 df.merge$weekday <- weekdays(df.merge$time)
+df.merge$weekday = factor(df.merge$weekday,labels = c('周二','周六','周日','周三','周四','周五','周一'))
 weekday.doc <- table(df.merge$account,df.merge$weekday)
 weekday.doc <- weekday.doc[,c(7,1,4,5,6,2,3)]
 weekday.doc <- prop.table(weekday.doc,margin = 1)
@@ -225,10 +232,10 @@ for (account in unique(df.merge$account))
 {
  
   hot.temp <- as.integer(df.merge[df.merge$account==account,"read"])
-  hot.temp[hot.temp==4] <- 12.5
-  hot.temp[hot.temp==3] <- 7.5
-  hot.temp[hot.temp==2] <- 3
-  hot.temp[hot.temp==1] <- 0.5
+  hot.temp[hot.temp==1] <- 0
+  hot.temp[hot.temp==2] <- 0
+  hot.temp[hot.temp==3] <- 0
+  hot.temp[hot.temp==4] <- 1
   hot.temp<- tapply(hot.temp,
                          INDEX=df.merge[df.merge$account==account,"time"],FUN=sum)
   hot.temp.df <- data.frame(time=as.Date(names(hot.temp)))
@@ -246,7 +253,7 @@ ggplot(data=hot,mapping=aes(x=time,y=value,color="lightblue",alpha=0.05))+geom_p
 
 dailyhot <- data.table(hot)
 
-target <- hot[account=='毒舌电影',]
+target <- hot[hot$account=='毒舌电影',]
 target
 ggplot(data=target,mapping=aes(x=time,y=value,color="lightblue",alpha=0.05))+geom_point(position="jitter")+
   geom_smooth(method='loess',se = F,span=0.8,color="blue")+guides(alpha="none",colour="none")+
@@ -281,10 +288,10 @@ for (account in unique(df.merge$account))
   
   
   hot.temp <- as.integer(df.merge[df.merge$account==account&df.merge$advertisement==T,"read"])
-  hot.temp[hot.temp==4] <- 12.5
-  hot.temp[hot.temp==3] <- 7.5
-  hot.temp[hot.temp==2] <- 3
-  hot.temp[hot.temp==1] <- 0.5
+  hot.temp[hot.temp==1] <- 0
+  hot.temp[hot.temp==2] <- 0
+  hot.temp[hot.temp==3] <- 0
+  hot.temp[hot.temp==4] <- 1
   hot.temp<- tapply(hot.temp,
                     INDEX=df.merge[df.merge$account==account&df.merge$advertisement==T,"time"],FUN=sum)
   hot.temp.df <- data.frame(time=as.Date(names(hot.temp)))
@@ -339,12 +346,33 @@ ggplot(data=na.omit(test),mapping=aes(x=time,y=value,color=group,alpha=0.05))+ge
   #scale_x_date(date_labels='%Y-%m-%d',limits=c('2016-04-01',NA))+
   ylim(0,60)+
   theme_light()
-
+##
 test <- rbind(dailyhot,advhot)
-ggplot(data=na.omit(test),mapping=aes(x=time,y=value,color=group,alpha=0.01))+geom_point(position='jitter')+
-  geom_smooth(method='loess',se=F,span=0.2)+guides(alpha='none',color=guide_legend(title="热度类型",reverse=T))+
+ggplot(data=na.omit(test),mapping=aes(x=time,y=value,color=group,alpha=0.001,fill = 'white'))+geom_point(position='jitter')+
+  geom_smooth(method='loess',se=F,span=0.2)+guides(alpha='none',color=guide_legend(title="热度类型",reverse=T),fill = 'none')+
   labs(x="时间",y="热度")+
   #scale_x_date(date_labels='%Y-%m-%d',limits=c('2016-04-01',NA))+
   facet_wrap(~account,scales=c('free'),shrink=T,as.table=F)+
   theme_light()
        
+
+##提取变量：是否超过十万
+
+str(df.merge$read)
+df.merge$hot=ifelse(df.merge$read=='[100k,infty)',1,0)
+
+
+library(data.table)
+df.merge = data.table(df.merge)
+#阅读量上10万的比例
+hotporb = df.merge[,.(mean(hot,na.rm = T)),by=c('account','advertisement')]
+hotporb$advertisement = ifelse(hotporb$advertisement, '是','否')
+ggplot(data = hotporb, mapping=aes(x = account, y = V1,fill = advertisement)) + 
+  geom_col(position = 'dodge')+labs(x = '公众号',y = '阅读量超过10万的比例')+
+  guides(fill = guide_legend(title = '是否广告',reverse = T))+
+  scale_color_brewer(palette = 'Spectral')+theme_light()
+
+hotprob1 = dcast(hotporb,account~advertisement,value.var  = V1)
+ggplot(data = hotprob1, mapping = aes(x = 否,y = 是,color= account)) +geom_point()+
+  theme_light()+guides(color = 'none')+labs(x= '非广告阅读量超10万比例',y= '广告文阅读量超10万比例')+
+  labs(title = '热度向广告效果的转化率')
