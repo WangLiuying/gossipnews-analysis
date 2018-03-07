@@ -1,4 +1,72 @@
 
+##title topics
+
+#segment
+library(jiebaR)
+library(stringr)
+
+load("with_body.RData")
+
+title <- df.merge$title
+body <- df.merge$body
+jieba <- worker(type="mix",user = "./dictionary/topics.txt",
+                stop_word = "./dictionary/chinese_stopword.txt")
+jieba$bylines <- T
+jieba2 <- worker(user = "./dictionary/topics.txt",
+                 stop_word = STOPPATH,byline=T)
+title.seg <- segment(code =unlist(title),jiebar = jieba2)
+body.seg <- segment(code=unlist(body),jiebar=jieba)
+
+
+kws <- worker("keywords",user="./dictionary/topics.txt",
+              stop_word = "./dictionary/chinese_stopword.txt",topn=200)
+title.key <- vector_keywords(unlist(title.seg),jiebar=kws)
+title.key
+
+# kws <- worker("keywords",user="./dictionary/topics.txt",
+#               stop_word = "./dictionary/chinese_stopword.txt",topn=100)
+# body.seg <- lapply(body.seg,vector_keywords,kws)
+
+rm(df.merge,jieba,jieba2)
+##wordcloud
+
+library(wordcloud2)
+
+wordfreq <- data.frame(title.key,
+                       Freq=floor(as.numeric(names(title.key))))
+wordcloud2(data=wordfreq,shape="star",size=0.3)
+
+rm(title,body)
+rm(wordfreq)
+
+##advertisement title
+title <- df.merge[advertisement==T,'title']
+
+jieba <- worker(type="mix",user = "./dictionary/topics.txt",
+                stop_word = "./dictionary/chinese_stopword.txt")
+jieba$bylines <- T
+jieba2 <- worker(user = "./dictionary/topics.txt",
+                 stop_word = STOPPATH,byline=T)
+title.seg <- segment(code =unlist(title),jiebar = jieba2)
+
+
+kws <- worker("keywords",user="./dictionary/topics.txt",
+              stop_word = "./dictionary/chinese_stopword.txt",topn=300)
+title.key <- vector_keywords(unlist(title.seg),jiebar=kws)
+title.key
+
+
+rm(df.merge,jieba,jieba2)
+
+library(wordcloud2)
+
+wordfreq <- data.frame(title.key,
+                       Freq=floor(as.numeric(names(title.key))))
+wordcloud2(data=wordfreq,figPath = "./cloud1.jpg",size=0.3)
+
+rm(title,body)
+rm(wordfreq)
+
 ###############################
 ##样本描述
 ###############################
@@ -52,19 +120,26 @@ library(ggplot2)
 totalcount <- tapply(df.merge$time,df.merge$account,length)
 
 ggplot(df.merge,mapping = aes(x=time,y=reorder(account,df.merge$account,FUN=length),alpha=0.1))+
-  geom_point(position="jitter")+aes(colour=account,fill=account)+
+  geom_point(position="jitter")+aes(colour='mycolor')+
   labs(x = "时间",y = "公众号"#,title="公众号发文时间密度"
        )+
-  guides(colour="none",alpha="none",size="none",fill="none")+theme_light()+scale_color_brewer(palette="Spectral")
+  guides(colour="none",alpha="none",size="none",fill="none")+theme_light()+scale_colour_manual(values=c('mycolor'='#8e24aa'))
+
+
+ggplot(df.merge,mapping = aes(x=time),alpha=0.1)+
+  geom_freqpoly(bins=100)+aes(colour=account)+
+  labs(x = "时间",y = "公众号"#,title="公众号发文时间密度"
+  )+ylim(c('2016-04-2','2017-03-30'))
+  guides(colour="none",alpha="none",size="none",fill="none")+theme_light()
 
 ##空缺情况：休刊，黄金周休假
-ggplot(df.merge,mapping = aes(x=reorder(account,df.merge$account,FUN=length),fill=advertisement))+
+ggplot(df.merge,mapping = aes(x=reorder(account,df.merge$account,FUN=length),fill = '#388e3c'))+
   geom_bar()+
   labs(x = "公众号",y = "频数"
        #,title="公众号发文总量"
        )+
-  guides(fill=guide_legend(title = '是否广告',reverse = T))+
-  theme_light()+scale_fill_brewer(palette="Paired")
+  guides(fill='none')+scale_fill_manual(values = '#388e3c')+
+  theme_light()
 account.total <- table(df.merge$account)
 
 
@@ -112,9 +187,9 @@ topic.total
 ggplot(data=topic.total,mapping=aes(x=1,y=freeq,fill=Var1))+
   geom_col(position=position_fill(reverse = T))+
   geom_text(y=(cumsum(topic.total$freeq)+cumsum(c(0,topic.total$freeq[-9])))/2,
-            x=0.9,label=round(topic.total$freeq,2))+
-  geom_text(y=(cumsum(topic.total$freeq)+cumsum(c(0,topic.total$freeq[-9])))/2,
-            x=1.25,label=topic.total$Var1,cex=3)+
+            x=1.25,label=round(topic.total$freeq,2))+
+  #geom_text(y=(cumsum(topic.total$freeq)+cumsum(c(0,topic.total$freeq[-9])))/2,
+            #x=1.25,label=topic.total$Var1,cex=3)+
   coord_polar(theta="y",direction = 1)+labs(x="",y=""#,title="各大话题占比"
                                             )+
   guides(fill="none")+theme_light()+
@@ -162,7 +237,7 @@ topic_star <- na.omit(topic_star)
 ggplot(topic_star,mapping=aes(x=topics,y=docstar))+geom_bin2d()+theme_light()+
   labs(x="话题",y="明星"#,title="话题-明星热度"
        )+
-  scale_fill_continuous(low = "white",high="red")+
+  scale_fill_continuous(low = "white",high="blue")+
   theme(panel.grid = element_blank(),axis.text.y=element_text(size=9))+
   guides(fill=guide_legend(title = "频数",reverse=T))
 #带货女王杨幂，婚姻八卦宝强+杨幂，家庭亲子生活某渣男
@@ -183,7 +258,7 @@ ggplot(data=weekday.doc,mapping=aes(x=1,y=Freq,fill=Var2))+geom_col()+
   facet_wrap(~Var1,nrow=2,ncol=5,shrink = T)+#guides(fill="none")+
   labs(x="",y=""#,title="每周发文时间"
        )+
-  theme_light()+scale_fill_brewer(palette="Spectral")+
+  theme_light()+scale_fill_brewer(palette="BuPu")+
   theme(axis.text.y = element_blank(),axis.text.x=element_text(size=5),
         axis.ticks.y=element_blank())+
   guides(fill=guide_legend(title="每周"))
@@ -194,7 +269,7 @@ adv.doc <- table(df.merge$account,df.merge$advertisement)
 adv.doc <- prop.table(adv.doc,margin = 1)
 adv.doc <- as.data.table(adv.doc)
 adv.doc$V2 <- factor(adv.doc$V2,labels=c('普通推文','广告推文'))
-adv.doc$V1 <- reorder(adv.doc$V1,adv.N)
+adv.doc$V1 = reorder(adv.doc$V1,adv.doc$N,FUN=max,order = T)
 ggplot(data=adv.doc,mapping=aes(x=1,y=N,fill=V2))+geom_col()+
   coord_polar(theta="y",direction=1)+
   facet_wrap(~V1,,nrow=2,ncol=5,shrink = T)+#guides(fill="none")+
@@ -228,19 +303,19 @@ ggplot(df.seq,mapping = aes(x=adv,y=reorder(account,df.seq$account,FUN=length),a
 table(df.merge$account,df.merge$read)
 
 hot <- data.frame(time=unique(df.merge$time))
-for (account in unique(df.merge$account))
+for (caccount in unique(df.merge$account))
 {
  
-  hot.temp <- as.integer(df.merge[df.merge$account==account,"read"])
+  hot.temp <- as.integer(df.merge[account==caccount,read])
   hot.temp[hot.temp==1] <- 0
   hot.temp[hot.temp==2] <- 0
   hot.temp[hot.temp==3] <- 0
   hot.temp[hot.temp==4] <- 1
   hot.temp<- tapply(hot.temp,
-                         INDEX=df.merge[df.merge$account==account,"time"],FUN=sum)
+                         INDEX=df.merge[account==caccount,time],FUN=sum)
   hot.temp.df <- data.frame(time=as.Date(names(hot.temp)))
-  hot.temp.df[[account]] <- hot.temp
-  hot <- merge(x=hot,y=hot.temp.df,by="time",all.x = T)
+  hot.temp.df[[caccount]] <- hot.temp
+  hot <- merge(x=hot,y=hot.temp.df,by='time',all.x = T)
 }
 dim(hot)
 summary(hot)
@@ -283,19 +358,19 @@ ggplot(data=target,mapping=aes(x=time,y=value,color="lightblue",alpha=0.05))+geo
 table(df.merge$account,df.merge$read)
 
 hot <- data.frame(time=unique(df.merge$time))
-for (account in unique(df.merge$account))
+for (caccount in unique(df.merge$account))
 {
   
   
-  hot.temp <- as.integer(df.merge[df.merge$account==account&df.merge$advertisement==T,"read"])
+  hot.temp <- as.integer(df.merge[caccount==account&advertisement==T,read])
   hot.temp[hot.temp==1] <- 0
   hot.temp[hot.temp==2] <- 0
   hot.temp[hot.temp==3] <- 0
   hot.temp[hot.temp==4] <- 1
   hot.temp<- tapply(hot.temp,
-                    INDEX=df.merge[df.merge$account==account&df.merge$advertisement==T,"time"],FUN=sum)
+                    INDEX=df.merge[caccount==account&advertisement==T,time],FUN=sum)
   hot.temp.df <- data.frame(time=as.Date(names(hot.temp)))
-  hot.temp.df[[account]] <- hot.temp
+  hot.temp.df[[caccount]] <- hot.temp
   hot <- merge(x=hot,y=hot.temp.df,by="time",all.x = T)
 }
 dim(hot)
@@ -348,8 +423,10 @@ ggplot(data=na.omit(test),mapping=aes(x=time,y=value,color=group,alpha=0.05))+ge
   theme_light()
 ##
 test <- rbind(dailyhot,advhot)
-ggplot(data=na.omit(test),mapping=aes(x=time,y=value,color=group,alpha=0.001,fill = 'white'))+geom_point(position='jitter')+
-  geom_smooth(method='loess',se=F,span=0.2)+guides(alpha='none',color=guide_legend(title="热度类型",reverse=T),fill = 'none')+
+ggplot(data=na.omit(test),mapping=aes(x=time,y=value,color=group,alpha=0.001,fill = 'white'))+#geom_point(position='jitter')+
+  geom_smooth(method='loess',se=F,span=0.2)+
+  
+  guides(alpha='none',color=guide_legend(title="热度类型",reverse=T),fill = 'none')+
   labs(x="时间",y="热度")+
   #scale_x_date(date_labels='%Y-%m-%d',limits=c('2016-04-01',NA))+
   facet_wrap(~account,scales=c('free'),shrink=T,as.table=F)+
@@ -367,7 +444,7 @@ df.merge = data.table(df.merge)
 #阅读量上10万的比例
 hotporb = df.merge[,.(mean(hot,na.rm = T)),by=c('account','advertisement')]
 hotporb$advertisement = ifelse(hotporb$advertisement, '是','否')
-ggplot(data = hotporb, mapping=aes(x = account, y = V1,fill = advertisement)) + 
+ggplot(data = hotporb, mapping=aes(x = reorder(account,V1,sum), y = V1,fill = advertisement)) + 
   geom_col(position = 'dodge')+labs(x = '公众号',y = '阅读量超过10万的比例')+
   guides(fill = guide_legend(title = '是否广告',reverse = T))+
   scale_color_brewer(palette = 'Spectral')+theme_light()

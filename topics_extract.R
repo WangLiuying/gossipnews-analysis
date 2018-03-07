@@ -61,7 +61,7 @@ library(wordcloud2)
 
 wordfreq <- data.frame(title.key,
                        Freq=floor(as.numeric(names(title.key))))
-wordcloud2(data=wordfreq,figPath = "./cloud1.jpg",size=0.2)
+wordcloud2(data=wordfreq,figPath = "./cloud1.jpg",size=0.3)
 
 rm(title,body)
 rm(wordfreq)

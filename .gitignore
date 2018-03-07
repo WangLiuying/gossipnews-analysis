@@ -15,3 +15,10 @@ cloud1.jpg
 cloud2.png
 *.png
 *.jpeg
+*.pdf
+*.pptx
+*.ttf
+*.ttc
+*.rar
+*.html
+*.json

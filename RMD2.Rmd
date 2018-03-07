@@ -1,0 +1,266 @@
+---
+title: "公众号广告软文营销"
+author: "王柳盈 于海悦"
+date: "2018年1月24日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = F)
+```
+
+## 数据预处理
+
+变量的提取工作已经在上一期《娱乐公众号都在聊啥？》案例中详细介绍，因此本文在此直接给出整理好的数据。包括14201篇推文的基本信息和提取变量，但此处不包括正文。
+
+```{r}
+library(data.table)
+load('with_body.RData')
+df.merge = as.data.table(df.merge)
+```
+
+##新变量：标题中是否包含明星名字
+
+```{r}
+#loading
+library(text2vec)
+library(jiebaR)
+
+#读取明星词典
+stars = readLines('dictionary/starname2.txt', encoding = 'UTF-8')
+#分词，形成词汇表
+jiebar = worker(user = 'dictionary/starname2.txt', bylines = T)
+divide = segment(df.merge$title, jiebar)
+it = itoken(divide)
+vocab = create_vocabulary(it)
+#删除非明星词语
+stopword =  vocab$term[!vocab$term %in% stars]
+head(stopword)
+#形成
+vocab = create_vocabulary(it, stopwords = stopword)
+head(vocab)
+vec = vocab_vectorizer(vocab)
+dtm = create_dtm(it, vec)
+ifstars = (apply(dtm, 1, sum) >= 1)
+df.merge$ifstar = ifstars
+head(ifstars)
+```
+
+
+
+## 广告软文发布特点
+
+首先从标题设置来看。上一期我们分析了所有推文的标题设置习惯，发现关键词包括：八卦、图说、爆料、爱、脸，而常见的明星名字有杨幂、郑爽、范冰冰、胡歌、霍建华等，可以发现这些字眼同样出现在软文标题。但是关键词的TF-IDF得分排序有较大差异，可以发现在这张图中，明星的名字，以及“明星”、“颜值”、“男神女神”这类强调外貌的词语更加突出了。
+
+```{r}
+library(jiebaR)
+library(stringr)
+#对标题进行分词
+title <- df.merge[advertisement==T,title]
+jieba <- worker(type="mix",user = "./dictionary/topics.txt",
+                stop_word = "./dictionary/chinese_stopword.txt")
+jieba$bylines <- T
+jieba2 <- worker(user = "./dictionary/topics.txt",
+                 stop_word = STOPPATH,byline=T)
+title.seg <- segment(code =unlist(title),jiebar = jieba2)
+#提取标题中的关键词
+kws <- worker("keywords",user="./dictionary/topics.txt",
+              stop_word = "./dictionary/chinese_stopword.txt",topn=200)
+title.key <- vector_keywords(unlist(title.seg),jiebar=kws)
+head(title.key)
+
+rm(jieba,jieba2)
+
+##wordcloud
+library(wordcloud2)
+
+wordfreq <- data.frame(title.key,
+                       Freq=floor(as.numeric(names(title.key))))
+# 词云图，交互图像
+wordcloud2(data=wordfreq,shape = 'circle',size=0.3)
+
+rm(title)
+rm(wordfreq)
+```
+
+### 广告软文发布时间密度
+
+从发布广告软文的时间密度来看，基本比较均匀。需要说明的是，图中呈现出的间断区间，通过与对所有推文进行的绘制，可以推测出这段时间属于公众号的休息日（基本为黄金周，严肃八卦有一段很长的休整期）。
+
+```{r}
+#x轴为时间，y轴为公众号。因此需要先提出时间，并滤去非广告者
+library(ggplot2)
+df.merge$adv <- df.merge$time
+df.merge[!df.merge$advertisement,"adv"] <- NA
+df.seq <- df.merge[!is.na(df.merge$adv),]
+ggplot(df.seq,mapping = aes(x=adv,y=reorder(account,df.seq$account,FUN=length),alpha=0.1))+
+  geom_point()+aes(colour=account,fill=account)+
+  labs(x = "时间",y = "公众号"#,title="广告发布时间密度"
+       )+
+  guides(fill="none",colour="none",alpha="none",size="none")+
+  theme_light()+scale_color_brewer(palette="Spectral")
+```
+
+### 公众号广告软文占比
+
+各自的广告软文比例都保持在四分之一左右，除了“严肃八卦”接收了较多的广告业务，劳模“圈内扒爷”的比例略低
+
+```{r}
+adv.doc <- table(df.merge$account,df.merge$advertisement)
+adv.doc <- prop.table(adv.doc,margin = 1)
+adv.doc <- as.data.table(adv.doc)
+adv.doc$V2 <- factor(adv.doc$V2,labels=c('普通推文','广告推文'))
+adv.doc$V1 = reorder(adv.doc$V1,adv.doc$N,FUN=max,order = T)
+ggplot(data=adv.doc,mapping=aes(x=1,y=N,fill=V2))+geom_col()+
+  coord_polar(theta="y",direction=1)+
+  facet_wrap(~V1,,nrow=2,ncol=5,shrink = T)+#guides(fill="none")+
+  labs(x="",y=""#,title="广告发布占比"
+       )+
+  theme_light()+scale_fill_brewer(palette='Paired')+
+  theme(axis.text.y =element_blank(),axis.ticks.y = element_blank(),
+        axis.text.x=element_text(size=5))+
+  guides(fill=guide_legend(title="推文类型"))
+```
+
+### 广告软文常驻明星top30
+
+从广告文中提取出现次数最高的30位明星，如果结合上一期的普通推文常驻明星TOP30，可以发现两者间存在较明显的差异。
+
+```{r}
+#这里重新提取一下推文人物
+load('with_body.RData')
+body <- df.merge[df.merge$advertisement==T,'body']
+load('no_body.RData')
+#分词
+workdevice1<-worker(user = "dictionary/starname2.txt",stop_word = "dictionary/chinese_stopword.txt",bylines = T,topn = 5)
+seg_document<- segment(unlist(body),workdevice1)
+star <- readLines("dictionary/starname2.txt",encoding="UTF-8")
+it <- itoken(seg_document)
+vocab <- create_vocabulary(it)
+#筛除非明星名字的词
+stopwords <- vocab$term[!(vocab$term %in% star)]
+vocab.star <- create_vocabulary(it,stopwords = stopwords);rm(stopwords)
+
+topstar <- vocab.star$term[order(vocab.star$doc_count,decreasing = T)]
+topstar <- data.frame(star=topstar,doc_counts=vocab.star$doc_count[order(vocab.star$doc_count,decreasing = T)])
+
+
+library(text2vec)
+topstar <- prune_vocabulary(vocab.star,doc_proportion_min = 0.0315)
+gender <-c(2,1,1,2,2,1,2,2,1,1,2,2,2,1,2,1,1,2,1,1,1,2,2,1,2,1,2,2,1,2)
+gender <- factor(gender,levels = c(1,2),labels = c('男','女'))
+color <- rep(gender,times = topstar$doc_count %/% 20)
+topstar <- rep(topstar$term,times=topstar$doc_count %/% 20)
+
+ggplot(mapping=aes(x=reorder(topstar,topstar,length),fill=as.factor(color),colour=as.factor(color)))+
+  geom_dotplot(dotsize=0.5,stackratio = 2)+coord_flip()+
+  labs(x="明星",y="曝光次数"#,title="公众号最青睐明星top30"
+       )+
+  theme_light()+guides(fill=guide_legend(title='性别'),colour="none")+theme(axis.text.x  = element_blank())+
+  theme(axis.text.y=element_text(size=9))+
+  scale_fill_brewer(palette = 'Paired')+scale_color_brewer(palette='Paired')
+```
+
+## 阅读热度分析
+
+###阅读量超过10万的推文占比
+
+```{r}
+df.merge$hot=ifelse(df.merge$read=='[100k,infty)',1,0)
+
+
+library(data.table)
+df.merge = data.table(df.merge)
+#阅读量上10万的比例 条形图
+hotporb = df.merge[,.(mean(hot,na.rm = T)),by=c('account','advertisement')]
+hotporb$advertisement = ifelse(hotporb$advertisement, '是','否')
+ggplot(data = hotporb, mapping=aes(x = reorder(account,V1,sum), y = V1,fill = advertisement)) + 
+  geom_col(position = 'dodge')+labs(x = '公众号',y = '阅读量超过10万的比例')+
+  guides(fill = guide_legend(title = '是否广告',reverse = T))+
+  scale_color_brewer(palette = 'Spectral')+theme_light()
+
+##散点图
+hotprob1 = dcast(hotporb,account~advertisement,value.var  = 'V1')
+ggplot(data = hotprob1, mapping = aes(x = 否,y = 是,color= account)) +geom_point()+
+  theme_light()+guides(color = 'none')+labs(x= '非广告阅读量超10万比例',y= '广告文阅读量超10万比例')+
+  labs(title = '热度向广告效果的转化率')
+
+```
+
+
+```{r}
+#提取普通推文热度
+hot <- data.frame(time=unique(df.merge$time))
+for (caccount in unique(df.merge$account))
+{
+ 
+  hot.temp <- as.integer(df.merge[account==caccount,read])
+  hot.temp[hot.temp==1] <- 0
+  hot.temp[hot.temp==2] <- 0
+  hot.temp[hot.temp==3] <- 0
+  hot.temp[hot.temp==4] <- 1
+  hot.temp<- tapply(hot.temp,
+                         INDEX=df.merge[account==caccount,time],FUN=sum)
+  hot.temp.df <- data.frame(time=as.Date(names(hot.temp)))
+  hot.temp.df[[caccount]] <- hot.temp
+  hot <- merge(x=hot,y=hot.temp.df,by='time',all.x = T)
+}
+dim(hot)
+summary(hot)
+library(data.table)
+hot <- melt(hot,id.vars=c("time"),variable.name="account")
+dailyhot <- data.table(hot)
+
+
+#广告的热度变化
+table(df.merge$account,df.merge$read)
+
+hot <- data.frame(time=unique(df.merge$time))
+for (caccount in unique(df.merge$account))
+{
+  
+  
+  hot.temp <- as.integer(df.merge[caccount==account&advertisement==T,read])
+  hot.temp[hot.temp==1] <- 0
+  hot.temp[hot.temp==2] <- 0
+  hot.temp[hot.temp==3] <- 0
+  hot.temp[hot.temp==4] <- 1
+  hot.temp<- tapply(hot.temp,
+                    INDEX=df.merge[caccount==account&advertisement==T,time],FUN=sum)
+  hot.temp.df <- data.frame(time=as.Date(names(hot.temp)))
+  hot.temp.df[[caccount]] <- hot.temp
+  hot <- merge(x=hot,y=hot.temp.df,by="time",all.x = T)
+}
+dim(hot)
+summary(hot)
+library(data.table)
+hot <- melt(hot,id.vars=c("time"),variable.name="account")
+
+advhot <- data.table(hot)
+
+dailyhot$group="总体热度"
+advhot$group='广告热度'
+
+##合并普通热度和广告文热度，作图
+test <- rbind(dailyhot,advhot)
+ggplot(data=na.omit(test),mapping=aes(x=time,y=value,color=group,alpha=0.001,fill = 'white'))+#geom_point(position='jitter')+
+  geom_smooth(method='loess',se=F,span=0.2)+
+  
+  guides(alpha='none',color=guide_legend(title="热度类型",reverse=T),fill = 'none')+
+  labs(x="时间",y="热度")+
+  #scale_x_date(date_labels='%Y-%m-%d',limits=c('2016-04-01',NA))+
+  facet_wrap(~account,scales=c('free'),shrink=T,as.table=F)+
+  theme_light()
+```
+
+###逻辑回归
+```{r}
+load('newdata.Rdata')
+newdata$hot<-df.merge$hot
+newdata$weekday<-as.character(newdata$weekday)
+newdata$weekday<-factor(newdata$weekday,levels=c("星期一","星期二","星期三","星期四","星期五","星期六","星期日"))
+newdata_adv<-newdata[which(newdata$advertisement=="是"),]
+
+g<-glm(hot ~ length +length^2+ topstars+original+topic+weekday+account, family = "binomial", data = newdata_adv)
+summary(g)
+```

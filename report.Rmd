@@ -1,0 +1,428 @@
+---
+title: "公众号"
+author: "Wang,Liuying"
+date: "2018年1月13日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##抓取数据、清洗
+
+爬虫抓取，略
+
+##信息提取
+
+###推文总字数
+推文的长度会否影响点赞量？我们计算了每篇文章的长度，并切分为：
+1000字一下、1000到2000字、2000字到3000字、3000字到4000字、4000字到5000字、5000字以上
+```{r}
+load('with_body.RData')
+#计算字数
+body_length <- as.vector(sapply(df.merge$body,nchar))
+df.merge$body_length <- body_length
+
+#切分区间
+length_interval <- character(length(df.merge$body_length))
+length_interval[which(body_length<1000)] <- "[0,1000)"
+length_interval[which(body_length>=1000&body_length<2000)] <- "[1000,2000)"
+length_interval[which(body_length>=2000&body_length<3000)] <- "[2000,3000)"
+length_interval[which(body_length>=3000&body_length<4000)] <- "[3000,4000)"
+length_interval[which(body_length>=4000&body_length<5000)] <- "[4000,5000)"
+length_interval[which(body_length>=5000)] <- "[5000,inf)"
+length_interval
+length_interval <- as.factor(length_interval)
+str(length_interval)
+df.merge$length_interval <- length_interval
+table(length_interval)
+```
+
+###是否包含热门明星
+
+热门明星按照 艺人新媒体指数排行榜 半年榜 来进行判断。选取前50名热门艺人。
+```{r}
+#读取热门明星名单
+
+# con <- file("dictionary/topstars.txt", encoding = "UTF-8")
+# topsinfo <- readLines(con)
+# close(con)
+# top50_stars <- topsinfo[seq(2,150,by=3)]
+load('data_processing.RData')
+
+sum(stars)
+stars <- integer(length(df.merge$title))
+#进行匹配
+for (i in seq_along(stars)){
+  stars[i] <-  sum( str_detect(df.merge$body[i],top50_stars))
+}
+topstars <- stars!=0
+df.process$topstars <- topstars
+```
+
+###推文主要相关明星
+我们提取了正文中所有的明星名字，并找出每篇推文中，出现最多次的名字，作为本篇推文的主要相关明星。
+```{r}
+body <- df.merge$body
+#分词
+workdevice1<-worker(user = "dictionary/starname2.txt",stop_word = "dictionary/chinese_stopword.txt",bylines = T,topn = 5)
+seg_document<- segment(unlist(body),workdevice1)
+star <- readLines("dictionary/starname2.txt",encoding="UTF-8")
+it <- itoken(seg_document)
+vocab <- create_vocabulary(it)
+#筛除非明星名字的词
+stopwords <- vocab$term[!(vocab$term %in% star)]
+vocab.star <- create_vocabulary(it,stopwords = stopwords);rm(stopwords)
+vect <- vocab_vectorizer(vocab.star)
+#形成新的DTM矩阵，词典仅包含明星名字
+dtm.star <- create_dtm(it,vect)
+#找到该文档中出现最多次的明星
+docstar <- vocab.star$vocab$terms[apply(dtm.star,1,which.max)]
+docstar[apply(dtm.star,1,sum)==0] <- NA
+
+df.merge$docstar <- docstar
+```
+
+###是否广告
+根据正文最后800字，检查是否出现品牌、店铺信息、手游网游名词等。
+```{r}
+library(stringr)
+#截取正文末尾800字
+body <- df.merge$body
+body <- lapply(body,str_trunc,800,"left")
+#品牌词典作为自定义词典进行分词
+jieba <- worker(type="mix",user = "./dictionary/mybrands.txt",stop=STOPPATH,bylines = T)
+body.brand <- segment(unlist(body),jiebar = jieba)
+brands <- readLines(con = "./dictionary/mybrands.txt",encoding = "UTF-8")
+
+#筛除无用词
+it <- itoken(iterable = body.brand)
+vocab <- create_vocabulary(it)
+vocab <- vocab$vocab$terms
+stopwords <- vocab[!(vocab %in% brands)]
+stop <- readLines(STOPPATH,encoding="UTF-8")
+#把无用的词都写入停止词典，方便下一步操作
+fileopen <- file("./dictionary/notbrands.txt",open="w",encoding = "UTF-8")
+writeLines(c(stop,stopwords),con=fileopen)
+close(fileopen)
+
+#提取
+
+jieba <- worker(type="mix",user="./dictionary/mybrands.txt",stop="./dictionary/notbrands.txt",bylines = T )
+body.brand <- segment(unlist(body),jiebar = jieba)
+it <- itoken(iterable = body.brand)
+brands <- readLines("./dictionary/mybrands.txt",encoding="UTF-8")
+vocab <- create_vocabulary(it)
+stop <- vocab$term[!(vocab$term %in% brands)]
+vocab <- create_vocabulary(it,stopwords = stop)
+vect <- vocab_vectorizer(vocab)
+dtm <- create_dtm(it,vect)
+
+#判别广告
+advjudge <- (apply(dtm,1,sum)>1)
+advindex <- which(advjudge>0)
+
+df.merge$advertisement <- (advjudge>0)
+```
+
+
+以上，我们完成了简单的特征提取工作。进一步的提取将在后文利用LDA聚类提取主题。
+
+##发文行为分析
+
+我们从标题设置、发文频率、LDA主题聚类、最热明星四个角度来基本描绘公众号的发文风格。
+
+###标题词云
+
+我们对标题进行了分词、并且进行了词云绘制。“八卦”、“图说”、“爆料”、“爱”、“脸”等词是各家钟爱的标题用词，简单粗暴，一语道破文章主旨，直接用劲爆的内容吸引眼球。带货女王“杨幂”简直吸睛保障，妥妥碾压其它一众明星，所谓人红是非多，郑爽、范冰冰也不逞多让，而相比较，男星出现的机会似乎较少，一眼能脱颖而出的有胡歌、霍建华。
+
+```{r}
+library(jiebaR)
+library(stringr)
+#对标题进行分词
+title <- df.merge$title
+jieba <- worker(type="mix",user = "./dictionary/topics.txt",
+                stop_word = "./dictionary/chinese_stopword.txt")
+jieba$bylines <- T
+jieba2 <- worker(user = "./dictionary/topics.txt",
+                 stop_word = STOPPATH,byline=T)
+title.seg <- segment(code =unlist(title),jiebar = jieba2)
+#提取标题中的关键词
+kws <- worker("keywords",user="./dictionary/topics.txt",
+              stop_word = "./dictionary/chinese_stopword.txt",topn=200)
+title.key <- vector_keywords(unlist(title.seg),jiebar=kws)
+title.key
+
+rm(jieba,jieba2)
+
+##wordcloud
+library(wordcloud2)
+
+wordfreq <- data.frame(title.key,
+                       Freq=floor(as.numeric(names(title.key))))
+wordcloud2(data=wordfreq,figPath = "./cloud1.jpg",size=0.3)
+
+rm(title,body)
+rm(wordfreq)
+```
+
+###发文规律
+
+
+首先来看一下发文总量
+```{r}
+#首先更改一下标签 公众号ID>中文
+levels(df.merge$account) <- list('毒舌电影'='dsmovie','她刊'='iiiher','严肃八卦'='yansubagua',
+                             '关爱八卦成长协会'='gossipmaker','深八影视圈'='realmovie520',
+                             '深夜八卦'='shenyebagua818','凤凰娱乐'='entifengvip',                             '新浪娱乐'='sinaentertainment','腾讯娱乐'='txent','圈内扒爷'='bbbbaye')
+
+df.merge$account <-factor(df.merge$account,
+                          labels=c('圈内扒爷','毒舌电影','凤凰娱乐','关爱八卦成长协会',                                        '她刊','深八影视圈','深夜八卦','新浪娱乐','腾讯娱乐','严肃八卦')) 
+library(ggplot2)
+ggplot(df.merge,mapping=aes(x=reorder(account,df.merge$account,FUN=length),
+                            fill = 'blue'))+
+  geom_bar()+
+  labs(x = "公众号",y = "频数")+
+  guides(fill='none')+scale_fill_manual(values = c('blue'='#42a5f5'))+
+  theme_light()
+```
+发文量最高的依次是：腾讯、扒爷、新浪、凤凰。门户公众号普遍发文量大于独立公众号。
+
+
+从发文密度散点图中可以看出，某些公众号有规律的休假期（黄金周）。严肃八卦则有一段休整期。
+```{r}
+ggplot(df.merge,mapping = aes(x=time,y=reorder(account,df.merge$account,FUN=length),alpha=0.1))+
+  geom_point(position="jitter")+aes(colour='mycolor')+
+  labs(x = "时间",y = "公众号"#,title="公众号发文时间密度"
+       )+
+  guides(colour="none",alpha="none",size="none",fill="none")+theme_light()+scale_colour_manual(values=c('mycolor'='#8e24aa'))
+```
+
+
+从一周分布来看，一般独立公众号会选择在周六或周日进行暂时的休整。
+```{r}
+df.merge$weekday <- weekdays(df.merge$time)
+df.merge$weekday = factor(df.merge$weekday,labels = c('周二','周六','周日','周三','周四','周五','周一'))
+weekday.doc <- table(df.merge$account,df.merge$weekday)
+weekday.doc <- weekday.doc[,c(7,1,4,5,6,2,3)]
+weekday.doc <- prop.table(weekday.doc,margin = 1)
+weekday.doc <- as.data.frame(weekday.doc)
+ggplot(data=weekday.doc,mapping=aes(x=1,y=Freq,fill=Var2))+geom_col()+
+  coord_polar(theta="y",direction=1)+
+  facet_wrap(~Var1,nrow=2,ncol=5,shrink = T)+#guides(fill="none")+
+  labs(x="",y=""#,title="每周发文时间"
+       )+
+  theme_light()+scale_fill_brewer(palette="BuPu")+
+  theme(axis.text.y = element_blank(),axis.text.x=element_text(size=5),
+        axis.ticks.y=element_blank())+
+  guides(fill=guide_legend(title="每周"))
+```
+
+###LDA主题聚类
+
+为了研究推文选择的话题与点赞量的关系，进而研究粉丝究竟喜欢看哪些文章，我们首先要对推文进行一下聚类，大致地分成几类。
+```{r}
+#载入包
+library(jiebaR)
+library(stringr)
+
+#正文部分分词
+body <- df.merge$body
+jieba <- worker(type="mix",user = "./dictionary/topics.txt",
+                stop_word = "./dictionary/chinese_stopword.txt")
+jieba$bylines <- T
+body.seg <- segment(code=unlist(body),jiebar=jieba)
+
+#筛选出现次数大于15，且至少在20篇文档中出现的词语
+library(text2vec)
+help(package="text2vec")
+#it <- itoken(iterable = title.seg)
+it <- itoken(iterable = body.seg)
+vocab <- create_vocabulary(it)
+vocab
+vocab <- prune_vocabulary(vocab,term_count_min = 15,doc_proportion_min = 0.0015)
+#形成DTM矩阵
+vectorizer <- vocab_vectorizer(vocab)
+dtm <- create_dtm(it,vectorizer)
+dim(dtm)
+```
+
+形成DTM矩阵后，进一步的，就可以进行LDA主题聚类了。
+
+```{r}
+library(topicmodels)
+
+#慎重运行，运算量极大
+
+# 
+# K <- 5:15
+# fold <- 5;n <- dim(dtm)[1]
+# alpha=0.1;delta=0.1
+# # perp <- data.frame()
+# for (k in K)
+# {
+#   log.likelihood <- c()
+#   foldedperp <- c()
+#   for (f in 1:fold)
+#   {
+#     cat("training:k=",k,",fold=",f,"\n")
+#     index <- sample(x=1:n,size=n%/%3)
+#     tindex <- sample(x=setdiff(1:n,index),size=n%/%3)
+#     corpus.loop <- as.matrix(dtm[index,])
+#     testset <- as.matrix(dtm[tindex,])
+#     gibbs <- LDA(corpus.loop,k,method="Gibbs",
+#                  control = list(alpha=alpha,delta=delta,burnin=300,iter=200,seed=6646+k+f))
+#     log.likelihood <- c(log.likelihood,gibbs@loglikelihood)
+#     foldedperp <- c(foldedperp,perplexity(gibbs,testset))
+#     
+#   }
+#   perp <- rbind(perp,data.frame(Num_topics=k,loglikelihood=mean(log.likelihood),perplexity=mean(foldedperp)))
+#   save.image("lda_ver1.RData")
+#   Sys.sleep(2)
+# }
+# 
+# 
+#likelihood
+# perp
+# library(ggplot2)
+# ggplot(data=perp,mapping=aes(x=Num_topics,y=loglikelihood))+geom_line()+
+#   geom_point()+labs(xlab="Num of topics",ylab="loglikelihood")
+# ggplot(data=perp,mapping=aes(x=Num_topics,y=perplexity))+geom_line()+
+#   geom_point()+labs(xlab="Num of topics",ylab="perplexity")
+```
+本段代码用于进行选择聚类的类别数，计算每个K对应的likelihood和perplexity。
+
+在这里我们选择K=9,提取出每一类的高频词，并且总结每一类的主题。
+
+```{r}
+k=9
+alpha=0.1;delta=0.1
+gibbs <- LDA(as.matrix(dtm),k,method="Gibbs",
+             control = list(alpha=alpha,delta=delta,burnin=500,iter=500,seed=6646))
+table(fit.topics <- topics(gibbs))#提出主题
+(topwords <- terms(gibbs,20))#提出主题中最可能的关键词
+
+# k=9
+# 1.电影评论
+# 2.港台娱乐圈
+# 3.粉丝八卦爆料
+# 4.歌唱综艺节目
+# 5.时尚穿搭
+# 6.明星婚姻八卦
+# 7.豪门风云
+# 8.家庭亲子生活
+# 9.演员演艺点评
+```
+
+可视化，需用HTML（Firefox）打开
+```{r,eval=F}
+theta <- gibbs@gamma
+#topic-word phi matrix
+phi <- exp(gibbs@beta)
+doc.length <- apply(dtm,1,length)
+
+library(LDAvis)
+json <- createJSON(phi=phi,theta=theta,vocab=vocab$vocab$terms,
+                   doc.length =doc.length,term.frequency = vocab$vocab$terms_counts)
+
+dir.path <- "./LDAvis-gossip-version1"
+serVis(json,out.dir = dir.path,open.browser=F)
+
+#Windows环境下，要将编码转写为UTF8
+writeLines(iconv(readLines(paste(dir.path,"/lda.json",sep="")), from = "GBK", to = "UTF8"),
+
+           file(paste(dir.path,"/lda.json",sep=""), encoding="UTF-8"))
+```
+
+将预测得到的主题作为变量加入DataFrame
+```{r}
+df.merge$topics <- fit.topics
+df.merge$topics <- factor(df.merge$topics,levels=1:9,
+                          labels=c("电影评论","港台娱乐圈","粉丝八卦爆料",
+                          "歌唱综艺节目","时尚穿搭","明星婚姻",
+                          "豪门风云","家庭亲子生活","演员演艺点评"))
+```
+
+
+主题报道的时间密度和各主题占比
+```{r}
+ggplot(df.merge,mapping = aes(x=time,y=reorder(topics,topics,FUN=length),alpha=1))+
+  geom_point(position="jitter")+aes(colour=topics)+
+  labs(x = "时间",y = "话题"#,title="各主题报道时间密度"
+       )+
+  guides(colour="none",alpha="none")+theme_light()+scale_color_brewer(palette = 'Spectral')
+
+topic.total <- as.data.frame(table(df.merge$topics))
+topic.total$freeq <- topic.total$Freq/sum(topic.total$Freq)
+topic.total = topic.total[order(topic.total$freeq),]
+
+ggplot(data=topic.total,mapping=aes(x=1,y=freeq,fill=reorder(Var1,freeq)))+
+  geom_col(position=position_fill(reverse = T))+
+  geom_text(y=(cumsum(topic.total$freeq)+cumsum(c(0,topic.total$freeq[-9])))/2,
+            x=1.25,label=round(topic.total$freeq,2))+
+  #geom_text(y=(cumsum(topic.total$freeq)+cumsum(c(0,topic.total$freeq[-9])))/2,
+            #x=1.25,label=topic.total$Var1,cex=3)+
+  #coord_polar(theta="y",direction = 1)+labs(x="",y=""#,title="各大话题占比")+
+  guides(fill="none",colour = 'none')+theme_light()+
+  theme(axis.text.y =element_blank())+scale_fill_brewer(breaks = topic.total$Var1,palette = 'Spectral')
+
+```
+经常被报道的主题：5（时尚穿搭）、3（粉丝八卦爆料）、8（家庭亲子生活）、9（演员演艺点评）
+
+各公众号之间的主题选择差异？
+```{r}
+ggplot(df.merge,mapping = aes(x=account,fill=topics))+
+  geom_bar(,position='fill')+
+  labs(x = '公众号',y = "各主题占比"#,title="各主题报道数"
+       )+
+  guides(fill=guide_legend(title="主题"))+theme_light()+
+  scale_fill_brewer(palette="PuBu")
+  #scale_fill_manual(values=c(
+  #   '电影评论'='#aa00ff','家庭亲子生活'='#ea80fc','演员演艺点评'='#673ab7','粉丝八卦爆料'='#7c4dff','明星婚姻'='#4527a0','港台娱乐圈'='#304ffe','歌唱综艺节目'='#536dfe','时尚穿搭'='#2196f3','豪门风云'='#81d4fa'
+  # ))
+```
+可以看出，如圈内扒爷，深八影视圈，腾讯娱乐这些公众号，分配比较平均。而毒舌、关爱八卦成长协会为例的公众号，比较有侧重点。
+
+###话题人物
+找出曝光次数最多的30名明星、公众人物
+```{r}
+topstar <- vocab.star$term[order(vocab.star$doc_count,decreasing = T)]
+topstar <- data.frame(star=topstar,doc_counts=vocab.star$doc_count[order(vocab.star$doc_count,decreasing = T)])
+
+
+library(text2vec)
+topstar <- prune_vocabulary(vocab.star,doc_proportion_min = 0.0412)
+gender <-c(2,1,1,2,2,1,2,2,1,1,2,2,2,1,2,1,1,2,1,1,1,2,2,1,2,1,2,2,1,2)
+gender <- factor(gender,levels = c(1,2),labels = c('男','女'))
+color <- rep(gender,times = topstar$doc_count %/% 100)
+topstar <- rep(topstar$term,times=topstar$doc_count %/% 100)
+
+ggplot(mapping=aes(x=reorder(topstar,topstar,length),fill=as.factor(color),colour=as.factor(color)))+
+  geom_dotplot(dotsize=0.5,stackratio = 2)+coord_flip()+
+  labs(x="明星",y="曝光次数"#,title="公众号最青睐明星top30"
+       )+
+  theme_light()+guides(fill=guide_legend(title='性别'),colour="none")+theme(axis.text.x  = element_blank())+
+  theme(axis.text.y=element_text(size=9))+
+  scale_fill_brewer(palette = 'Paired')+scale_color_brewer(palette='Paired')
+
+```
+
+明星与话题之间的对应关系，尝试用热力图进行表达
+```{r}
+
+topstar <- unique(topstar)
+topic_star <- df.merge[,c("account","topics","docstar")]
+head(topic_star)
+topic_star[!(topic_star$docstar %in% topstar),"docstar"] <- NA
+topic_star <- na.omit(topic_star)
+ggplot(topic_star,mapping=aes(x=topics,y=docstar))+geom_bin2d()+theme_light()+
+  labs(x="话题",y="明星"#,title="话题-明星热度"
+       )+
+  scale_fill_continuous(low = "white",high="blue")+
+  theme(panel.grid = element_blank(),axis.text.y=element_text(size=9))+
+  guides(fill=guide_colorbar(title = "频数"))
+```
+
+
+
